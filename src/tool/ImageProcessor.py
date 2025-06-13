@@ -1,4 +1,5 @@
 import os
+import sys
 import warnings
 from io import BytesIO
 
@@ -7,14 +8,10 @@ import numpy as np
 import piexif
 from PIL import Image
 
-from ImageSegmentation import ImageSegmentation
-from PhotoEntity import PhotoEntity
-from PhotoRequirements import PhotoRequirements
-from agpic import ImageCompressor
-
-
-def get_model_file(filename):
-    return os.path.join('model', filename)
+from .ImageSegmentation import ImageSegmentation
+from .PhotoEntity import PhotoEntity
+from .PhotoRequirements import PhotoRequirements
+from .agpic import ImageCompressor
 
 
 class ImageProcessor:
@@ -23,9 +20,9 @@ class ImageProcessor:
     """
 
     def __init__(self, img_path,
-                 yolov8_model_path=get_model_file('yolov8n-pose.onnx'),
-                 yunet_model_path=get_model_file('face_detection_yunet_2023mar.onnx'),
-                 RMBG_model_path=get_model_file('RMBG-1.4-model.onnx'),
+                 yolov8_model_path=None,
+                 yunet_model_path=None,
+                 RMBG_model_path=None,
                  rgb_list=None,
                  y_b=False):
         """
@@ -39,6 +36,16 @@ class ImageProcessor:
         """
         if not os.path.exists(img_path):
             raise FileNotFoundError(f"Image path does not exist: {img_path}")
+
+        # Set default model paths if not provided
+        if yolov8_model_path is None:
+            yolov8_model_path = os.path.join(os.path.dirname(sys.executable), 'model', 'yolov8n-pose.onnx')
+        if yunet_model_path is None:
+            yunet_model_path = os.path.join(os.path.dirname(sys.executable), 'model', 'face_detection_yunet_2023mar.onnx')
+        if RMBG_model_path is None:
+            RMBG_model_path = os.path.join(os.path.dirname(sys.executable), 'model', 'RMBG-1.4-model.onnx')
+
+        # Check if model files exist
         if not os.path.exists(yolov8_model_path):
             raise FileNotFoundError(f"YOLOv8 model path does not exist: {yolov8_model_path}")
         if not os.path.exists(yunet_model_path):
@@ -48,7 +55,7 @@ class ImageProcessor:
 
         self.photo = PhotoEntity(img_path, yolov8_model_path, yunet_model_path, y_b)
         self.segmentation = ImageSegmentation(model_path=RMBG_model_path, model_input_size=[1024, 1024],
-                                              rgb_list=rgb_list if rgb_list is not None else [255, 255, 255])
+                                           rgb_list=rgb_list if rgb_list is not None else [255, 255, 255])
         self.photo_requirements_detector = PhotoRequirements()
 
     @staticmethod
@@ -115,6 +122,7 @@ class ImageProcessor:
             # Get bounding box coordinates and keypoints
             bbox_xyxy = self.photo.person_bbox
             x1, y1, x2, y2 = bbox_xyxy
+            print(x1, y1, x2, y2)
             bbox_keypoints = self.photo.person_keypoints
             bbox_height = y2 - y1
 
@@ -122,7 +130,7 @@ class ImageProcessor:
             left_shoulder = (bbox_keypoints[18], bbox_keypoints[19],
                               bbox_keypoints[20]) # bbox_keypoints[5] right shoulder
             right_shoulder = (bbox_keypoints[15], bbox_keypoints[16], bbox_keypoints[17])   # bbox_keypoints[6] left shoulder
-            # print(left_shoulder, right_shoulder)
+            print(left_shoulder, right_shoulder)
 
             # Compute rotation angle
             angle = self.compute_rotation_angle(left_shoulder, right_shoulder, (height, width))
@@ -152,7 +160,7 @@ class ImageProcessor:
             # Adjust the crop area to ensure the face is centered in the image
             left_eye = [bbox_keypoints[6], bbox_keypoints[7], bbox_keypoints[8]]  # bbox_keypoints[2]
             right_eye = [bbox_keypoints[3], bbox_keypoints[4], bbox_keypoints[5]]  # bbox_keypoints[1]
-            # print(left_eye, right_eye)
+            print(left_eye, right_eye)
             face_center_x = (left_eye[0] + right_eye[0]) / 2
             crop_width = x2 - x1
 
@@ -163,7 +171,7 @@ class ImageProcessor:
             x1 = 0 if x1 < 0 else x1
             x2 = width if x2 > width else x2
 
-            # print(x1,x2,y1,y2)
+            print(x1,x2,y1,y2)
 
             # Crop the image
             cropped_image = rotated_image[y1:y2, x1:x2]

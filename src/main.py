@@ -5,18 +5,32 @@ import os
 import sys
 import warnings
 
-# Set the project root directory
-current_dir = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(current_dir)
-DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
-MODEL_DIR = os.path.join(current_dir, 'model')
-TOOL_DIR = os.path.join(current_dir, 'tool')
+def get_app_path():
+    """Get the application base path for both dev and PyInstaller environments."""
+    if getattr(sys, 'frozen', False):
+        # In PyInstaller bundle
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_root_path():
+    """Get the root path for both dev and PyInstaller environments."""
+    if getattr(sys, 'frozen', False):
+        # In PyInstaller bundle
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Set the project paths
+APP_PATH = get_app_path()
+ROOT_PATH = get_root_path()
+DATA_DIR = os.path.join(ROOT_PATH, 'data')
+MODEL_DIR = os.path.join(APP_PATH, 'model')
+TOOL_DIR = os.path.join(APP_PATH, 'tool')
 
 # Add data and model directories to sys.path
 sys.path.extend([DATA_DIR, MODEL_DIR, TOOL_DIR])
 
 # Set src directory as PYTHONPATH
-sys.path.insert(0, current_dir)
+sys.path.insert(0, APP_PATH)
 
 from tool.ImageProcessor import ImageProcessor
 from tool.PhotoSheetGenerator import PhotoSheetGenerator
@@ -58,7 +72,22 @@ def get_language():
     language = os.getenv('CLI_LANGUAGE', '')
     if language == '':
         # Get system language
-        system_language, _ = locale.getdefaultlocale()
+        try:
+            # Try to get current locale
+            current_locale = locale.getlocale()[0]
+            if current_locale is None:
+                # If no locale is set, try to set the default locale
+                locale.setlocale(locale.LC_ALL, '')
+                current_locale = locale.getlocale()[0]
+            
+            # Extract language code from locale
+            if current_locale:
+                system_language = current_locale.split('_')[0]
+            else:
+                system_language = 'en'
+        except Exception:
+            system_language = 'en'
+            
         language = 'en' if system_language and system_language.startswith('en') else 'zh'
         return language
     return language

@@ -24,6 +24,35 @@ echo Github: https://github.com/aoguai/LiYing
 echo LICENSE AGPL-3.0 license
 echo ----------------------------------------
 
+REM Prompt user for model paths
+set /p "change_models=Do you want to modify model paths? (yes/no, default is no): "
+if /i "!change_models!"=="yes" || /i "!change_models!"=="y" (
+    set /p "yolov8_path=Enter YOLOv8 model path (press Enter for default): "
+    if "!yolov8_path!"=="" (
+        set yolov8_param=
+    ) else (
+        set yolov8_param=--yolov8-model-path "!yolov8_path!"
+    )
+
+    set /p "yunet_path=Enter YuNet model path (press Enter for default): "
+    if "!yunet_path!"=="" (
+        set yunet_param=
+    ) else (
+        set yunet_param=--yunet-model-path "!yunet_path!"
+    )
+
+    set /p "rmbg_path=Enter RMBG model path (press Enter for default): "
+    if "!rmbg_path!"=="" (
+        set rmbg_param=
+    ) else (
+        set rmbg_param=--rmbg-model-path "!rmbg_path!"
+    )
+) else (
+    set yolov8_param=
+    set yunet_param=
+    set rmbg_param=
+)
+
 REM Prompt user for input parameters
 set /p "layout_only=Layout only without changing background (yes/no, default is no): "
 if /i "!layout_only!"=="yes" || /i "!layout_only!"=="y" (
@@ -142,7 +171,7 @@ if exist "%INPUT_PATH%\" (
         set "OUTPUT_PATH=%%~dpnf_output%%~xf"
 
         REM Execute Python script to process the image
-        start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "%%~ff" -b !rgb_list! -s "%%~dpnf_output%%~xf" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! & pause"
+        start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "%%~ff" -b !rgb_list! -s "%%~dpnf_output%%~xf" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! !yolov8_param! !yunet_param! !rmbg_param! & pause"
     )
 ) else (
     REM If it's a file, process the file directly
@@ -151,7 +180,7 @@ if exist "%INPUT_PATH%\" (
     set OUTPUT_PATH=%INPUT_DIR%%~n1_output%~x1
 
     REM Due to setlocal enabledelayedexpansion, use !variable_name! to reference variables
-    start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "!INPUT_PATH!" -b !rgb_list! -s "!OUTPUT_PATH!" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! & pause"
+    start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "!INPUT_PATH!" -b !rgb_list! -s "!OUTPUT_PATH!" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! !yolov8_param! !yunet_param! !rmbg_param! & pause"
 )
 
 pause

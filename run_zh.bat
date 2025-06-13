@@ -24,6 +24,35 @@ echo Github: https://github.com/aoguai/LiYing
 echo 许可证: AGPL-3.0
 echo ----------------------------------------
 
+REM 提示用户进行模型路径
+set /p "change_models=是否修改模型路径（是/否，默认为否）："
+if /i "!change_models!"=="是" (
+    set /p "yolov8_path=输入 YOLOv8 模型路径（为空使用默认路径）："
+    if "!yolov8_path!"=="" (
+        set yolov8_param=
+    ) else (
+        set yolov8_param=--yolov8-model-path "!yolov8_path!"
+    )
+
+    set /p "yunet_path=输入 YuNet 模型路径（为空使用默认路径）："
+    if "!yunet_path!"=="" (
+        set yunet_param=
+    ) else (
+        set yunet_param=--yunet-model-path "!yunet_path!"
+    )
+
+    set /p "rmbg_path=输入 RMBG 模型路径（为空使用默认路径）："
+    if "!rmbg_path!"=="" (
+        set rmbg_param=
+    ) else (
+        set rmbg_param=--rmbg-model-path "!rmbg_path!"
+    )
+) else (
+    set yolov8_param=
+    set yunet_param=
+    set rmbg_param=
+)
+
 REM 提示用户输入参数
 set /p "layout_only=是否仅进行布局而不更改背景（是/否，默认为否）: "
 if /i "!layout_only!"=="是" (
@@ -143,7 +172,7 @@ if exist "%INPUT_PATH%\" (
         set "OUTPUT_PATH=%%~dpnf_output%%~xf"
         
         REM 执行Python脚本处理图像
-        start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "%%~ff" -b !rgb_list! -s "%%~dpnf_output%%~xf" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! & pause"
+        start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "%%~ff" -b !rgb_list! -s "%%~dpnf_output%%~xf" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! !yolov8_param! !yunet_param! !rmbg_param! & pause"
     )
 ) else (
     REM 如果是文件，直接处理该文件
@@ -152,7 +181,7 @@ if exist "%INPUT_PATH%\" (
     set OUTPUT_PATH=%INPUT_DIR%%~n1_output%~x1
     
     REM 由于使用了setlocal enabledelayedexpansion，使用!variable_name!来引用变量
-    start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "!INPUT_PATH!" -b !rgb_list! -s "!OUTPUT_PATH!" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! & pause"
+    start "" cmd /k "%PYTHON_EXE% %SCRIPT_PATH% "!INPUT_PATH!" -b !rgb_list! -s "!OUTPUT_PATH!" -p !photo_type! --photo-sheet-size !photo_sheet_size! !compress! !save_corrected! !change_background! !save_background! -sr !sheet_rows! -sc !sheet_cols! !rotate! !resize! !save_resized! !layout_only! !add_crop_lines! !target_size! !size_range! !use_csv_size! !yolov8_param! !yunet_param! !rmbg_param! & pause"
 )
 
 pause

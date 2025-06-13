@@ -38,8 +38,17 @@ from tool.ConfigManager import ConfigManager
 def get_language():
     """Get the system language or default to English."""
     try:
-        system_lang = locale.getlocale()[0].split('_')[0]
-        return system_lang if system_lang in ['en', 'zh'] else 'en'
+        # Try to get current locale
+        current_locale = locale.getlocale()[0]
+        if current_locale is None:
+            # If no locale is set, try to set the default locale
+            locale.setlocale(locale.LC_ALL, '')
+            current_locale = locale.getlocale()[0]
+        
+        # Extract language code from locale
+        if current_locale:
+            system_lang = current_locale.split('_')[0]
+            return system_lang if system_lang in ['en', 'zh'] else 'en'
     except:
         return 'en'
 

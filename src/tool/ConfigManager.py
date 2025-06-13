@@ -1,7 +1,19 @@
 import csv
 import os
 import math
+import sys
 from typing import Dict, List, Optional, Tuple
+
+def get_data_dir():
+    """Get the data directory path for all environments."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller environment
+        return os.path.join(os.path.dirname(sys.executable), 'data')
+    else:
+        # Development or embeddable Python environment
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        return os.path.join(project_root, 'data')
 
 class ConfigManager:
     _instance = None
@@ -11,14 +23,18 @@ class ConfigManager:
             cls._instance = super(ConfigManager, cls).__new__(cls)
         return cls._instance
 
+
     def __init__(self, language: str = 'zh', size_file: Optional[str] = None, color_file: Optional[str] = None):
         if not hasattr(self, 'initialized'):
             self.language = language
-            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-            default_size_file = os.path.join(project_root, 'data', f'size_{language}.csv')
-            default_color_file = os.path.join(project_root, 'data', f'color_{language}.csv')
+            data_dir = get_data_dir()
+            default_size_file = os.path.join(data_dir, f'size_{language}.csv')
+            default_color_file = os.path.join(data_dir, f'color_{language}.csv')
+            
+            # If explicit paths are provided, use them; otherwise use defaults
             self.size_file = os.path.abspath(size_file) if size_file else default_size_file
             self.color_file = os.path.abspath(color_file) if color_file else default_color_file
+            
             self.size_config: Dict[str, Dict] = {}
             self.color_config: Dict[str, Dict] = {}
             self.load_configs()
@@ -175,9 +191,9 @@ class ConfigManager:
     def switch_language(self, new_language: str):
         """Switch language and reload configurations."""
         self.language = new_language
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        self.size_file = os.path.join(project_root, 'data', f'size_{new_language}.csv')
-        self.color_file = os.path.join(project_root, 'data', f'color_{new_language}.csv')
+        data_dir = get_data_dir()
+        self.size_file = os.path.join(data_dir, f'size_{new_language}.csv')
+        self.color_file = os.path.join(data_dir, f'color_{new_language}.csv')
         try:
             self.load_configs()
         except FileNotFoundError as e:

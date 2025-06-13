@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
-
+import os
+import sys
 
 class YuNet:
     """
@@ -24,9 +25,12 @@ class YuNet:
     :rtype: None
     """
 
-    def __init__(self, model_path, input_size=[320, 320], conf_threshold=0.6, nms_threshold=0.3, top_k=5000,
-                 backend_id=0,
-                 target_id=0):
+    def __init__(self, model_path=None, input_size=[320, 320], conf_threshold=0.6, nms_threshold=0.3, top_k=5000,
+                 backend_id=0, target_id=0):
+        if model_path is None:
+            model_path = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'model', 'face_detection_yunet_2023mar.onnx')
+        assert model_path.endswith('.onnx'), f"invalid onnx model: {model_path}"
+        assert os.path.exists(model_path), f"model not found: {model_path}"
         self._model_path = model_path
         self._input_size = tuple(input_size)  # [w, h]
         self._conf_threshold = conf_threshold
