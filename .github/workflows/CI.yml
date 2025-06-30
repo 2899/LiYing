@@ -6,7 +6,235 @@ on:
       - 'v*.*.*'
 
 jobs:
-  build-windows-portable:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## 版本说明
+
+            本发布包含以下三种版本：
+
+            ### CLI 版本
+            - **Compatible**: Python 3.8.10 + onnxruntime 1.14.0
+              - 仅包含命令行界面的单个可执行文件（pyinstaller打包）
+              - 体积最小，启动最快
+              - 仅支持命令行参数运行
+              - 适合自动化脚本或批处理调用
+              - 兼容性最好，适合较老的系统
+            - **Latest**: Python 3.11.8 + onnxruntime >=1.14.0
+              - 与Compatible版本功能相同，但使用更新的Python和依赖
+              - 性能更好，适合较新的系统
+
+            ### BAT 版本
+            - **Compatible**: Python 3.8.10 (Embedded) + onnxruntime 1.14.0
+              - 包含完整的Python环境（嵌入式）
+              - 不包含WebUI相关组件
+              - 支持命令行和批处理脚本运行
+              - 兼容性好，适合较老的系统
+            - **Latest**: Python 3.11.8 (Embedded) + onnxruntime >=1.14.0
+              - 与Compatible版本功能相同，但使用更新的Python和依赖
+              - 性能更好，适合较新的系统
+
+            ### WebUI 版本
+            - **Compatible**: Python 3.8.10 (Embedded) + gradio 4.44.1
+              - 完整版本，包含所有功能
+              - 包含WebUI图形界面
+              - 包含完整的Python环境（嵌入式）
+              - 支持命令行、批处理脚本和网页界面运行
+              - 兼容性好，适合较老的系统
+            - **Latest**: Python 3.11.8 (Embedded) + gradio >=4.44.1
+              - 与Compatible版本功能相同，但使用更新的Python和依赖
+              - 性能更好，适合较新的系统
+
+            ### 选择建议
+            - 如果您只需要命令行功能，推荐使用 CLI 版本
+            - 如果您需要批处理脚本功能，推荐使用 BAT 版本
+            - 如果您需要完整功能，推荐使用 WebUI 版本
+            - 如果您的系统较老或遇到兼容性问题，请选择 Compatible 版本
+            - 如果您的系统较新且想要获得最佳性能，请选择 Latest 版本
+
+            ---
+
+            ## Version Description
+
+            This release includes three different versions:
+
+            ### CLI Version
+            - **Compatible**: Python 3.8.10 + onnxruntime 1.14.0
+              - Single executable file with command-line interface only (pyinstaller packaged)
+              - Smallest size and fastest startup
+              - Supports command-line parameters only
+              - Ideal for automation scripts or batch processing
+              - Best compatibility, suitable for older systems
+            - **Latest**: Python 3.11.8 + onnxruntime >=1.14.0
+              - Same functionality as Compatible version but with newer Python and dependencies
+              - Better performance, suitable for newer systems
+
+            ### BAT Version
+            - **Compatible**: Python 3.8.10 (Embedded) + onnxruntime 1.14.0
+              - Includes complete Python environment (embedded)
+              - Does not include WebUI components
+              - Supports command-line and batch script execution
+              - Good compatibility, suitable for older systems
+            - **Latest**: Python 3.11.8 (Embedded) + onnxruntime >=1.14.0
+              - Same functionality as Compatible version but with newer Python and dependencies
+              - Better performance, suitable for newer systems
+
+            ### WebUI Version
+            - **Compatible**: Python 3.8.10 (Embedded) + gradio 4.44.1
+              - Complete version with all features
+              - Includes WebUI graphical interface
+              - Includes complete Python environment (embedded)
+              - Supports command-line, batch scripts, and web interface
+              - Good compatibility, suitable for older systems
+            - **Latest**: Python 3.11.8 (Embedded) + gradio >=4.44.1
+              - Same functionality as Compatible version but with newer Python and dependencies
+              - Better performance, suitable for newer systems
+
+            ### Selection Recommendations
+            - If you only need command-line functionality, choose the CLI version
+            - If you need batch script functionality, choose the BAT version
+            - If you need complete functionality, choose the WebUI version
+            - If you have an older system or encounter compatibility issues, choose the Compatible version
+            - If you have a newer system and want the best performance, choose the Latest version
+          draft: false
+          prerelease: false
+
+  build-cli-compatible:
+    needs: create-release
+    runs-on: windows-latest
+    env:
+      PYTHON_VERSION: '3.8.10'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pyinstaller
+        python -m pip install "onnxruntime==1.14.0"
+        python -m pip install "orjson==3.10.7"
+        python -m pip install -r requirements.txt
+
+    - name: Create CLI-only requirements
+      run: |
+        (Get-Content requirements.txt) -notmatch 'gradio' | Set-Content cli-requirements.txt
+
+    - name: Build CLI executable
+      run: |
+        pyinstaller --onefile --name LiYing_CLI_Compatible `
+          --paths src `
+          --add-data "src/tool;tool" `
+          --hidden-import onnxruntime `
+          --hidden-import cv2 `
+          --hidden-import numpy `
+          --hidden-import PIL `
+          --hidden-import orjson `
+          --hidden-import piexif `
+          --hidden-import click `
+          --hidden-import colorama `
+          --hidden-import mozjpeg_lossless_optimization `
+          src/main.py
+
+    - name: Prepare release package
+      run: |
+        New-Item -Path 'LiYing_CLI' -ItemType Directory
+        Copy-Item -Path 'dist/LiYing_CLI_Compatible.exe' -Destination 'LiYing_CLI'
+        Copy-Item -Path 'data' -Destination 'LiYing_CLI' -Recurse
+        Compress-Archive -Path 'LiYing_CLI\*' -DestinationPath 'LiYing_CLI_Win_x64_Compatible.zip'
+
+    - name: Upload CLI Package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_CLI_Win_x64_Compatible.zip
+        asset_name: LiYing_CLI_Win_x64_Compatible.zip
+        asset_content_type: application/zip
+
+  build-cli-latest:
+    needs: create-release
+    runs-on: windows-latest
+    env:
+      PYTHON_VERSION: '3.11.8'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pyinstaller
+        python -m pip install cffi
+        python -m pip install "onnxruntime>=1.17.0"
+        python -m pip install "orjson>=3.9.15"
+        python -m pip install -r requirements.txt
+
+    - name: Create CLI-only requirements
+      run: |
+        (Get-Content requirements.txt) -notmatch 'gradio' | Set-Content cli-requirements.txt
+
+    - name: Build CLI executable
+      run: |
+        pyinstaller --onefile --name LiYing_CLI_Latest `
+          --paths src `
+          --add-data "src/tool;tool" `
+          --hidden-import onnxruntime `
+          --hidden-import cv2 `
+          --hidden-import numpy `
+          --hidden-import PIL `
+          --hidden-import orjson `
+          --hidden-import piexif `
+          --hidden-import click `
+          --hidden-import colorama `
+          --hidden-import mozjpeg_lossless_optimization `
+          --hidden-import cffi `
+          --hidden-import _cffi_backend `
+          src/main.py
+
+    - name: Prepare release package
+      run: |
+        New-Item -Path 'LiYing_CLI' -ItemType Directory
+        Copy-Item -Path 'dist/LiYing_CLI_Latest.exe' -Destination 'LiYing_CLI'
+        Copy-Item -Path 'data' -Destination 'LiYing_CLI' -Recurse
+        Compress-Archive -Path 'LiYing_CLI\*' -DestinationPath 'LiYing_CLI_Win_x64_Latest.zip'
+
+    - name: Upload CLI Package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_CLI_Win_x64_Latest.zip
+        asset_name: LiYing_CLI_Win_x64_Latest.zip
+        asset_content_type: application/zip
+
+  build-bat-compatible:
+    needs: create-release
     runs-on: windows-latest
     env:
       PYTHON_VERSION: '3.8.10'
@@ -26,7 +254,129 @@ jobs:
         $pythonPth = Get-Content 'python-embed\python38._pth' -Raw
         $pythonPth = $pythonPth -replace '#import site','import site'
         Set-Content -Path 'python-embed\python38._pth' -Value $pythonPth -NoNewline
+        Invoke-WebRequest -Uri https://bootstrap.pypa.io/pip/3.8/get-pip.py -OutFile python-embed\get-pip.py
+        cd python-embed
+        .\python.exe get-pip.py
+        cd ..
+
+    - name: Create BAT-only requirements
+      run: |
+        (Get-Content requirements.txt) -notmatch 'gradio' | Set-Content bat-requirements.txt
+
+    - name: Install dependencies
+      run: |
+        cd python-embed
+        .\python.exe -m pip install "onnxruntime==1.14.0"
+        .\python.exe -m pip install "orjson==3.10.7"
+        .\python.exe -m pip install -r ..\bat-requirements.txt
+        cd ..
+
+    - name: Prepare BAT package
+      run: |
+        New-Item -Path 'LiYing_BAT' -ItemType Directory
+        Copy-Item -Path 'data' -Destination 'LiYing_BAT' -Recurse
+        Copy-Item -Path 'src' -Destination 'LiYing_BAT' -Recurse -Exclude @('webui')
+        Copy-Item -Path 'bat-requirements.txt' -Destination 'LiYing_BAT\requirements.txt'
+        Get-ChildItem -Path 'run_*.bat' -Exclude 'run_webui.bat' | Copy-Item -Destination 'LiYing_BAT'
+        Copy-Item -Path 'python-embed' -Destination 'LiYing_BAT\python-embed' -Recurse
+
+    - name: Create package
+      run: |
+        Compress-Archive -Path 'LiYing_BAT\*' -DestinationPath 'LiYing_BAT_Win_x64_Compatible.zip'
+
+    - name: Upload BAT Package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_BAT_Win_x64_Compatible.zip
+        asset_name: LiYing_BAT_Win_x64_Compatible.zip
+        asset_content_type: application/zip
+
+  build-bat-latest:
+    needs: create-release
+    runs-on: windows-latest
+    env:
+      PYTHON_VERSION: '3.11.8'
+      EMBEDDABLE_URL: 'https://www.python.org/ftp/python/3.11.8/python-3.11.8-embed-amd64.zip'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Download embeddable Python
+      run: |
+        Invoke-WebRequest -Uri ${{ env.EMBEDDABLE_URL }} -OutFile python-embed.zip
+        Expand-Archive -Path python-embed.zip -DestinationPath python-embed
+
+    - name: Configure Python
+      run: |
+        $pythonPth = Get-Content 'python-embed\python311._pth' -Raw
+        $pythonPth = $pythonPth -replace '#import site','import site'
+        Set-Content -Path 'python-embed\python311._pth' -Value $pythonPth -NoNewline
         Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile python-embed\get-pip.py
+        cd python-embed
+        .\python.exe get-pip.py
+        cd ..
+
+    - name: Create BAT-only requirements
+      run: |
+        (Get-Content requirements.txt) -notmatch 'gradio' | Set-Content bat-requirements.txt
+
+    - name: Install dependencies
+      run: |
+        cd python-embed
+        .\python.exe -m pip install "onnxruntime>=1.17.0"
+        .\python.exe -m pip install "orjson>=3.9.15"
+        .\python.exe -m pip install -r ..\bat-requirements.txt
+        cd ..
+
+    - name: Prepare BAT package
+      run: |
+        New-Item -Path 'LiYing_BAT' -ItemType Directory
+        Copy-Item -Path 'data' -Destination 'LiYing_BAT' -Recurse
+        Copy-Item -Path 'src' -Destination 'LiYing_BAT' -Recurse -Exclude @('webui')
+        Copy-Item -Path 'bat-requirements.txt' -Destination 'LiYing_BAT\requirements.txt'
+        Get-ChildItem -Path 'run_*.bat' -Exclude 'run_webui.bat' | Copy-Item -Destination 'LiYing_BAT'
+        Copy-Item -Path 'python-embed' -Destination 'LiYing_BAT\python-embed' -Recurse
+
+    - name: Create package
+      run: |
+        Compress-Archive -Path 'LiYing_BAT\*' -DestinationPath 'LiYing_BAT_Win_x64_Latest.zip'
+
+    - name: Upload BAT Package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_BAT_Win_x64_Latest.zip
+        asset_name: LiYing_BAT_Win_x64_Latest.zip
+        asset_content_type: application/zip
+
+  build-webui-compatible:
+    needs: create-release
+    runs-on: windows-latest
+    env:
+      PYTHON_VERSION: '3.8.10'
+      EMBEDDABLE_URL: 'https://www.python.org/ftp/python/3.8.10/python-3.8.10-embed-amd64.zip'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Download embeddable Python
+      run: |
+        Invoke-WebRequest -Uri ${{ env.EMBEDDABLE_URL }} -OutFile python-embed.zip
+        Expand-Archive -Path python-embed.zip -DestinationPath python-embed
+
+    - name: Configure Python
+      run: |
+        $pythonPth = Get-Content 'python-embed\python38._pth' -Raw
+        $pythonPth = $pythonPth -replace '#import site','import site'
+        Set-Content -Path 'python-embed\python38._pth' -Value $pythonPth -NoNewline
+        Invoke-WebRequest -Uri https://bootstrap.pypa.io/pip/3.8/get-pip.py -OutFile python-embed\get-pip.py
         cd python-embed
         .\python.exe get-pip.py
         cd ..
@@ -36,55 +386,87 @@ jobs:
         cd python-embed
         .\python.exe -m pip install "onnxruntime==1.14.0"
         .\python.exe -m pip install "orjson==3.10.7"
-        .\python.exe -m pip install "gradio==4.41.0"
+        .\python.exe -m pip install "gradio==4.44.1"
         .\python.exe -m pip install -r ..\requirements.txt
         cd ..
 
-    - name: Prepare application files
+    - name: Prepare WebUI package
       run: |
-        New-Item -Path 'LiYing' -ItemType Directory
+        New-Item -Path 'LiYing_WebUI' -ItemType Directory
+        Copy-Item -Path 'data' -Destination 'LiYing_WebUI' -Recurse
+        Copy-Item -Path 'src' -Destination 'LiYing_WebUI' -Recurse
+        Copy-Item -Path 'requirements.txt' -Destination 'LiYing_WebUI'
+        Copy-Item -Path 'run_*.bat' -Destination 'LiYing_WebUI'
+        Copy-Item -Path 'python-embed' -Destination 'LiYing_WebUI\python-embed' -Recurse
 
-        Copy-Item -Path 'data' -Destination 'LiYing' -Recurse
-        Copy-Item -Path 'src' -Destination 'LiYing' -Recurse
-        Copy-Item -Path 'images' -Destination 'LiYing' -Recurse
-        Copy-Item -Path 'requirements.txt' -Destination 'LiYing'
-        Copy-Item -Path 'run_*.bat' -Destination 'LiYing'
-
-        Copy-Item -Path 'python-embed' -Destination 'LiYing\python-embed' -Recurse
-
-    - name: Create a temporary Python script for zipping
+    - name: Create package
       run: |
-        echo "import zipfile" > zip_package.py
-        echo "import os" >> zip_package.py
-        echo "zipf = zipfile.ZipFile('LiYing_Portable_Win_x64.zip', 'w', zipfile.ZIP_DEFLATED)" >> zip_package.py
-        echo "for root, dirs, files in os.walk('LiYing'):" >> zip_package.py
-        echo "    for file in files:" >> zip_package.py
-        echo "        zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), os.path.join('LiYing', '..')))" >> zip_package.py
-        echo "zipf.close()" >> zip_package.py
+        Compress-Archive -Path 'LiYing_WebUI\*' -DestinationPath 'LiYing_WebUI_Win_x64_Compatible.zip'
 
-    - name: Zip package using Python
-      run: |
-        python zip_package.py
-
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-
-    - name: Upload Release Asset
+    - name: Upload WebUI Package
       uses: actions/upload-release-asset@v1
-      if: startsWith(github.ref, 'refs/tags/')
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./LiYing_Portable_Win_x64.zip
-        asset_name: LiYing_Win_x64_Portable.zip
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_WebUI_Win_x64_Compatible.zip
+        asset_name: LiYing_WebUI_Win_x64_Compatible.zip
+        asset_content_type: application/zip
+
+  build-webui-latest:
+    needs: create-release
+    runs-on: windows-latest
+    env:
+      PYTHON_VERSION: '3.11.8'
+      EMBEDDABLE_URL: 'https://www.python.org/ftp/python/3.11.8/python-3.11.8-embed-amd64.zip'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Download embeddable Python
+      run: |
+        Invoke-WebRequest -Uri ${{ env.EMBEDDABLE_URL }} -OutFile python-embed.zip
+        Expand-Archive -Path python-embed.zip -DestinationPath python-embed
+
+    - name: Configure Python
+      run: |
+        $pythonPth = Get-Content 'python-embed\python311._pth' -Raw
+        $pythonPth = $pythonPth -replace '#import site','import site'
+        Set-Content -Path 'python-embed\python311._pth' -Value $pythonPth -NoNewline
+        Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile python-embed\get-pip.py
+        cd python-embed
+        .\python.exe get-pip.py
+        cd ..
+
+    - name: Install dependencies
+      run: |
+        cd python-embed
+        .\python.exe -m pip install "onnxruntime>=1.17.0"
+        .\python.exe -m pip install "orjson>=3.9.15"
+        .\python.exe -m pip install "gradio>=4.19.2"
+        .\python.exe -m pip install -r ..\requirements.txt
+        cd ..
+
+    - name: Prepare WebUI package
+      run: |
+        New-Item -Path 'LiYing_WebUI' -ItemType Directory
+        Copy-Item -Path 'data' -Destination 'LiYing_WebUI' -Recurse
+        Copy-Item -Path 'src' -Destination 'LiYing_WebUI' -Recurse
+        Copy-Item -Path 'requirements.txt' -Destination 'LiYing_WebUI'
+        Copy-Item -Path 'run_*.bat' -Destination 'LiYing_WebUI'
+        Copy-Item -Path 'python-embed' -Destination 'LiYing_WebUI\python-embed' -Recurse
+
+    - name: Create package
+      run: |
+        Compress-Archive -Path 'LiYing_WebUI\*' -DestinationPath 'LiYing_WebUI_Win_x64_Latest.zip'
+
+    - name: Upload WebUI Package
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./LiYing_WebUI_Win_x64_Latest.zip
+        asset_name: LiYing_WebUI_Win_x64_Latest.zip
         asset_content_type: application/zip

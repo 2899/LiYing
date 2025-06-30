@@ -5,6 +5,10 @@ import os
 import re
 import sys
 import time
+import tempfile
+from pathlib import Path
+import shutil
+from functools import partial
 
 import cv2
 import gradio as gr
@@ -30,6 +34,7 @@ DEFAULT_COLOR_CONFIG = os.path.join(DATA_DIR, 'color_{}.csv')
 
 sys.path.extend([DATA_DIR, MODEL_DIR, TOOL_DIR])
 
+from tool.agpic import ImageCompressor
 from tool.ImageProcessor import ImageProcessor
 from tool.PhotoSheetGenerator import PhotoSheetGenerator
 from tool.PhotoRequirements import PhotoRequirements
@@ -38,8 +43,17 @@ from tool.ConfigManager import ConfigManager
 def get_language():
     """Get the system language or default to English."""
     try:
-        system_lang = locale.getlocale()[0].split('_')[0]
-        return system_lang if system_lang in ['en', 'zh'] else 'en'
+        # Try to get current locale
+        current_locale = locale.getlocale()[0]
+        if current_locale is None:
+            # If no locale is set, try to set the default locale
+            locale.setlocale(locale.LC_ALL, '')
+            current_locale = locale.getlocale()[0]
+        
+        # Extract language code from locale
+        if current_locale:
+            system_lang = current_locale.split('_')[0]
+            return system_lang if system_lang in ['en', 'zh'] else 'en'
     except:
         return 'en'
 
@@ -69,7 +83,7 @@ def parse_color(color_string):
         return [min(255, max(0, int(float(x)))) for x in rgb_match.groups()]
     return [255, 255, 255]
 
-def process_image(img_path, yolov8_path, yunet_path, rmbg_path, photo_requirements, photo_type, photo_sheet_size, rgb_list, compress=False, change_background=False, rotate=False, resize=True, sheet_rows=3, sheet_cols=3, add_crop_lines=True, target_size=None, size_range=None, use_csv_size=True):
+def process_image(img_path, yolov8_path, yunet_path, rmbg_path, photo_requirements, photo_type, photo_sheet_size, rgb_list, compress=False, change_background=False, rotate=False, resize=True, sheet_rows=3, sheet_cols=3, add_crop_lines=True):
     """Process the image with specified parameters."""
     processor = ImageProcessor(img_path, 
                             yolov8_model_path=yolov8_path,
@@ -82,16 +96,7 @@ def process_image(img_path, yolov8_path, yunet_path, rmbg_path, photo_requiremen
     
     # Get file size limits from CSV if enabled
     file_size_limits = {}
-    if use_csv_size:
-        file_size_limits = photo_requirements.get_file_size_limits(photo_type)
     
-    # User-provided limits override CSV limits
-    if target_size is not None:
-        file_size_limits = {'target_size': target_size}
-    elif size_range is not None and len(size_range) == 2:
-        # Convert from list to tuple for size_range parameter
-        file_size_limits = {'size_range': tuple(size_range)}
-
     if change_background:
         processor.change_background()
 
@@ -286,28 +291,11 @@ def create_demo(initial_language):
                                         rotate, resize, sheet_rows, sheet_cols, layout_only, add_crop_lines, 
                                         target_size, size_range_min, size_range_max, use_csv_size):
             nonlocal current_file_format, current_resolution
-
-            validated_target_size = None
-            validated_size_range = None
-
-            if target_size is not None and target_size > 0:
-                validated_target_size = int(target_size)
-
-            if size_range_min is not None and size_range_max is not None and size_range_min > 0 and size_range_max > 0:
-                if size_range_min < size_range_max:
-                    validated_size_range = [int(size_range_min), int(size_range_max)]
-                else:
-                    gr.Warning(t('size_range_error', language) if 'size_range_error' in TEXTS[language] else "Min size must be less than max size")
-
-            if validated_target_size is not None and validated_size_range is not None:
-                gr.Warning(t('size_params_conflict', language) if 'size_params_conflict' in TEXTS[language] else "Both target size and size range provided. Using target size.")
-                validated_size_range = None
             
             result = process_and_display(
                 input_image, yolov8_path, yunet_path, rmbg_path, size_config, color_config, 
                 photo_type, photo_sheet_size, background_color, compress, change_background, 
-                rotate, resize, sheet_rows, sheet_cols, layout_only, add_crop_lines,
-                validated_target_size, validated_size_range, use_csv_size
+                rotate, resize, sheet_rows, sheet_cols, layout_only, add_crop_lines
             )
             
             if result:
@@ -317,7 +305,7 @@ def create_demo(initial_language):
                 return final_image, corrected_image
             return None, None
 
-        def save_image_handler(image, path, lang, photo_type, photo_sheet_size, background_color):
+        def save_image_handler(image, path, lang, photo_type, photo_sheet_size, background_color, compress, use_csv_size, target_size, size_range_min, size_range_max, is_corrected):
             nonlocal current_file_format, current_resolution
             if image is None:
                 return t('no_image_to_save', lang)
@@ -340,7 +328,7 @@ def create_demo(initial_language):
             else:
                 dir_name = os.path.dirname(path)
                 base_name, ext = os.path.splitext(os.path.basename(path))
-                base_name = re.sub(r'[<>:"/\\|?*]', '_', base_name)  # 仅过滤文件名非法字符
+                base_name = re.sub(r'[<>:"/\\|?*]', '_', base_name)  # Filter only illegal characters of filename
                 filename = f"{base_name}.{current_file_format}"
 
                 if dir_name:
@@ -348,11 +336,52 @@ def create_demo(initial_language):
 
                 full_path = os.path.join(dir_name, filename) if dir_name else filename
 
+            file_size_limits = {}
+            if is_corrected and compress:
+                if use_csv_size:
+                    file_size_limits = photo_requirements.get_file_size_limits(photo_type)
+                else:
+                    validated_target_size = None
+                    validated_size_range = None
+                    if target_size is not None and target_size > 0:
+                        validated_target_size = int(target_size)
+                    if size_range_min is not None and size_range_max is not None and size_range_min > 0 and size_range_max > 0:
+                        if size_range_min < size_range_max:
+                            validated_size_range = (int(size_range_min), int(size_range_max))
+                        else:
+                             gr.Warning(t('size_range_error', lang) if 'size_range_error' in TEXTS[lang] else "Min size must be less than max size")
+                    
+                    if validated_target_size and validated_size_range:
+                        gr.Warning(t('size_params_conflict', lang) if 'size_params_conflict' in TEXTS[lang] else "Both target size and size range provided. Using target size.")
+                        validated_size_range = None
+                    
+                    if validated_target_size:
+                        file_size_limits['target_size'] = validated_target_size
+                    elif validated_size_range:
+                        file_size_limits['size_range'] = validated_size_range
+
+            temp_dir = None
             try:
-                save_image(image, full_path, current_file_format, current_resolution)
+                if is_corrected and compress and file_size_limits:
+                    temp_dir = tempfile.mkdtemp()
+                    temp_file_path = os.path.join(temp_dir, f"temp_image.{current_file_format}")
+                    save_image(image, temp_file_path, current_file_format, current_resolution)
+                    
+                    ImageCompressor.compress_image(
+                        fp=Path(temp_file_path),
+                        output=Path(full_path),
+                        force=True,
+                        **file_size_limits
+                    )
+                else:
+                    save_image(image, full_path, current_file_format, current_resolution)
+                
                 return t('image_saved_success', lang).format(path=full_path)
             except Exception as e:
                 return t('image_save_error', lang).format(error=str(e))
+            finally:
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir)
 
         def update_language(lang):
             """Update UI language and reload configs."""
@@ -484,8 +513,7 @@ def create_demo(initial_language):
 
         def process_and_display(image, yolov8_path, yunet_path, rmbg_path, size_config, color_config, photo_type, 
                                 photo_sheet_size, background_color, compress, change_background, rotate, resize, 
-                                sheet_rows, sheet_cols, layout_only, add_crop_lines, target_size=None, 
-                                size_range=None, use_csv_size=True):
+                                sheet_rows, sheet_cols, layout_only, add_crop_lines):
             """Process and display the image with given parameters."""
             rgb_list = parse_color(background_color)
             image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -508,9 +536,6 @@ def create_demo(initial_language):
                 sheet_rows=sheet_rows,
                 sheet_cols=sheet_cols,
                 add_crop_lines=add_crop_lines,
-                target_size=target_size,
-                size_range=size_range,
-                use_csv_size=use_csv_size
             )
 
             os.remove(temp_image_path)
@@ -593,23 +618,34 @@ def create_demo(initial_language):
             current_size_range_max_label = t('size_range_max', lang_val)
             current_size_option_label = t('size_input_option', lang_val)
 
+            updates = {
+                size_option_type: gr.update(choices=_size_option_choices_translated, label=current_size_option_label)
+            }
+
             if use_csv_val:
-                # If CSV size is used, hide all custom size options
-                return {
+                # If CSV size is used, hide and clear all custom size options
+                updates.update({
                     size_option_type: gr.update(visible=False, choices=_size_option_choices_translated, label=current_size_option_label),
-                    target_size: gr.update(visible=False, label=current_target_size_label),
-                    size_range_min: gr.update(visible=False, label=current_size_range_min_label),
-                    size_range_max: gr.update(visible=False, label=current_size_range_max_label)
-                }
+                    target_size: gr.update(visible=False, value=None, label=current_target_size_label),
+                    size_range_min: gr.update(visible=False, value=None, label=current_size_range_min_label),
+                    size_range_max: gr.update(visible=False, value=None, label=current_size_range_max_label)
+                })
             else:
-                # If CSV size is NOT used, show radio and relevant inputs
-                is_target_selected = option_type_val == "target"
-                return {
-                    size_option_type: gr.update(visible=True, choices=_size_option_choices_translated, label=current_size_option_label),
-                    target_size: gr.update(visible=is_target_selected, label=current_target_size_label),
-                    size_range_min: gr.update(visible=not is_target_selected, label=current_size_range_min_label),
-                    size_range_max: gr.update(visible=not is_target_selected, label=current_size_range_max_label)
-                }
+                # If CSV size is NOT used, show radio and relevant inputs, and clear the hidden ones
+                updates[size_option_type] = gr.update(visible=True, choices=_size_option_choices_translated, label=current_size_option_label)
+                if option_type_val == "target":
+                    updates.update({
+                        target_size: gr.update(visible=True, label=current_target_size_label),
+                        size_range_min: gr.update(visible=False, value=None, label=current_size_range_min_label),
+                        size_range_max: gr.update(visible=False, value=None, label=current_size_range_max_label),
+                    })
+                else:  # "range"
+                    updates.update({
+                        target_size: gr.update(visible=False, value=None, label=current_target_size_label),
+                        size_range_min: gr.update(visible=True, label=current_size_range_min_label),
+                        size_range_max: gr.update(visible=True, label=current_size_range_max_label),
+                    })
+            return updates
 
         lang_dropdown.change(
             update_language,
@@ -672,15 +708,18 @@ def create_demo(initial_language):
             outputs=[output_image, corrected_output]
         )
         
+        final_save_fn = partial(save_image_handler, is_corrected=False)
+        corrected_save_fn = partial(save_image_handler, is_corrected=True)
+
         save_final_btn.click(
-            save_image_handler,
-            inputs=[output_image, save_final_path, lang_dropdown, photo_type, photo_sheet_size, background_color],
+            final_save_fn,
+            inputs=[output_image, save_final_path, lang_dropdown, photo_type, photo_sheet_size, background_color, compress, use_csv_size, target_size, size_range_min, size_range_max],
             outputs=[notification]
         )
 
         save_corrected_btn.click(
-            save_image_handler,
-            inputs=[corrected_output, save_corrected_path, lang_dropdown, photo_type, photo_sheet_size, background_color],
+            corrected_save_fn,
+            inputs=[corrected_output, save_corrected_path, lang_dropdown, photo_type, photo_sheet_size, background_color, compress, use_csv_size, target_size, size_range_min, size_range_max],
             outputs=[notification]
         )
     

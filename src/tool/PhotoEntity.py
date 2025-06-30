@@ -1,15 +1,16 @@
 import os
+import sys
 import cv2 as cv
 from PIL import Image, ExifTags
 import numpy as np
 
-from yolov8_detector import YOLOv8Detector
-from YuNet import FaceDetector
-from agpic import ImageCompressor
+from .yolov8_detector import YOLOv8Detector
+from .YuNet import FaceDetector
+from .agpic import ImageCompressor
 
 
 class PhotoEntity:
-    def __init__(self, img_path, yolov8_model_path, yunet_model_path, y_b=False):
+    def __init__(self, img_path, yolov8_model_path=None, yunet_model_path=None, y_b=False):
         """
         Initialize the PhotoEntity class.
 
@@ -20,6 +21,13 @@ class PhotoEntity:
         """
         self.img_path = img_path
         self.image = self._correct_image_orientation(img_path)
+        
+        # Use default model paths if not provided
+        if yolov8_model_path is None:
+            yolov8_model_path = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'model', 'yolov8n-pose.onnx')
+        if yunet_model_path is None:
+            yunet_model_path = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'model', 'face_detection_yunet_2023mar.onnx')
+            
         self.yolov8_detector = YOLOv8Detector(yolov8_model_path)
         self.face_detector = FaceDetector(yunet_model_path)
         self.ImageCompressor_detector = ImageCompressor()
